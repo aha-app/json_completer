@@ -1,0 +1,6 @@
+AllCops:
+  NewCops: enable
+  Exclude:
+    - 'json_completer.gemspec'
+    - 'Gemfile'
+    - 'spec/**/*'
