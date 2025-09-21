@@ -1,6 +1,6 @@
 # JsonCompleter
 
-A Ruby library that converts partial JSON strings into valid JSON with incremental parsing support. Handles truncated primitives, missing values, and unclosed structures, making it ideal for streaming scenarios and incomplete API responses.
+A Ruby gem that converts partial JSON strings into valid JSON with high-performance incremental parsing. Efficiently processes streaming JSON with O(n) complexity for new data by maintaining parsing state between chunks. Handles truncated primitives, missing values, and unclosed structures without reprocessing previously parsed data.
 
 ## Installation
 
@@ -46,7 +46,7 @@ JsonCompleter.complete('[1, 2, {"key": "value"')
 
 ### Incremental Processing
 
-For streaming scenarios where JSON arrives in chunks:
+For streaming scenarios where JSON arrives in chunks. Each call processes only new data (O(n) complexity) by maintaining parsing state, making it highly efficient for large streaming responses:
 
 ```ruby
 completer = JsonCompleter.new
@@ -64,9 +64,16 @@ result3 = completer.complete('{"users": [{"name": "Alice"}, {"name": "Bob"}]}')
 # => '{"users": [{"name": "Alice"}, {"name": "Bob"}]}'
 ```
 
+#### Performance Characteristics
+
+- **Zero reprocessing**: Maintains parsing state to avoid reparsing previously processed data
+- **Linear complexity**: Each chunk processed in O(n) time where n = new data size, not total size
+- **Memory efficient**: Uses token-based accumulation with minimal state overhead
+- **Context preservation**: Tracks nested structures without full document analysis
+
 ### Common Use Cases
 
-- **Streaming JSON**: Process JSON as it arrives over network connections
+- **High-performance streaming JSON**: Process large JSON responses efficiently as data arrives over network connections
 - **Truncated API responses**: Complete JSON that was cut off due to size limits
 - **Log parsing**: Handle incomplete JSON entries in log files
 
