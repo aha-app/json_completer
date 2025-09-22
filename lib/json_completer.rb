@@ -51,7 +51,7 @@ class JsonCompleter
     end
 
     return input if input.empty?
-    return input if is_valid_json_primitive_or_document?(input)
+    return input if valid_json_primitive_or_document?(input)
 
     # If input hasn't grown since last time, just return completed version of existing state
     if @state.input_length == input.length && !@state.output_tokens.empty?
@@ -73,7 +73,7 @@ class JsonCompleter
       incomplete_string_buffer = @state.incomplete_string_buffer || StringIO.new('"')
       incomplete_string_escape_state = @state.incomplete_string_escape_state
       # Remove the auto-completed string from output_tokens since we'll add the real one
-      output_tokens.pop if output_tokens.last&.start_with?('"') && output_tokens.last&.end_with?('"')
+      output_tokens.pop if output_tokens.last&.start_with?('"') && output_tokens.last.end_with?('"')
     end
 
     # Process from the current index
@@ -81,7 +81,7 @@ class JsonCompleter
       # Special case: continuing an incomplete string
       if incomplete_string_buffer && index == @state.last_index
         str_value, new_index, terminated, new_buffer, new_escape_state = continue_parsing_string(
-          input, incomplete_string_start, incomplete_string_buffer, incomplete_string_escape_state
+          input, incomplete_string_buffer, incomplete_string_escape_state
         )
         if terminated
           output_tokens << str_value
@@ -227,9 +227,7 @@ class JsonCompleter
 
       # If odd number of trailing backslashes, remove the last one (incomplete escape)
       # If even number, they're all paired as escaped backslashes, don't remove any
-      if trailing_backslashes.odd?
-        buffer_str = buffer_str[0...-1]
-      end
+      buffer_str = buffer_str[0...-1] if trailing_backslashes.odd?
 
       # Check for incomplete unicode escape after handling backslashes
       if buffer_str =~ /\\u[0-9a-fA-F]{0,3}\z/ # Incomplete unicode
@@ -353,7 +351,7 @@ class JsonCompleter
 
   # Continues parsing an incomplete string from saved state
   # Returns [string_value, new_index, was_terminated, buffer, escape_state]
-  def continue_parsing_string(input, string_start_index, buffer, escape_state)
+  def continue_parsing_string(input, buffer, escape_state)
     # Buffer should not have closing quote - we removed it from parse_string_with_state
 
     index = @state.last_index
@@ -589,7 +587,8 @@ class JsonCompleter
           else
             (temp_num_val.include?('.') ? temp_num_val + '0' : temp_num_val)
           end,
-          index - start_index]
+          index - start_index
+        ]
       end
 
       num_str << input[index] # 'e' or 'E'
@@ -631,7 +630,7 @@ class JsonCompleter
       # Mismatch
     end
     # If at least the first char matched, we complete to the target_keyword
-    return [target_keyword, consumed_count] if consumed_count > 0
+    return [target_keyword, consumed_count] if consumed_count.positive?
 
     # Fallback (should not be reached if called correctly, i.e., input[index] is t,f, or n)
     # This indicates the char was not the start of the expected keyword.
@@ -702,7 +701,7 @@ class JsonCompleter
 
     output_tokens.slice!(last_token_idx)
     # Also remove any whitespace tokens that were before this comma and are now effectively trailing
-    while last_token_idx > 0 && output_tokens[last_token_idx - 1].strip.empty?
+    while last_token_idx.positive? && output_tokens[last_token_idx - 1].strip.empty?
       output_tokens.slice!(last_token_idx - 1)
       last_token_idx -= 1
     end
@@ -710,13 +709,13 @@ class JsonCompleter
 
   # Checks if a string is a valid JSON primitive or a complete JSON document.
   # This is a helper for early exit if input is already fine.
-  def is_valid_json_primitive_or_document?(str)
+  def valid_json_primitive_or_document?(str)
     # Check for simple primitives first
     return true if VALID_PRIMITIVES.include?(str)
     # Check for valid number (simplified regex, full JSON number is complex)
     # Allows integers, floats, but not ending with '.' or 'e'/'E' without digits
     if str.match?(/\A-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?\z/) &&
-        !str.end_with?('.') && !str.match?(/[eE][+-]?$/)
+       !str.end_with?('.') && !str.match?(/[eE][+-]?$/)
       return true
     end
     # Check for valid string literal
