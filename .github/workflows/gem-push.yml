@@ -19,7 +19,7 @@ jobs:
     - name: Set up Ruby
       uses: aha-app/setup-ruby@v1
       with:
-        ruby-version: 3.4.x
+        ruby-version: 3.4
 
     - name: Publish to RubyGems
       run: |
