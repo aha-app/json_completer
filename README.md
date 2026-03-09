@@ -1,6 +1,6 @@
 # JsonCompleter
 
-A Ruby gem that converts partial JSON strings into valid JSON with high-performance incremental parsing. Efficiently processes streaming JSON with O(n) complexity for new data by maintaining parsing state between chunks. Handles truncated primitives, missing values, and unclosed structures without reprocessing previously parsed data.
+A Ruby gem for incremental parsing of partial and incomplete JSON streams. It is built for streaming output from LLM providers such as OpenAI and Anthropic, and processes each new chunk in O(n) time by maintaining parser state between calls. Use `.parse` for parsed Ruby values and `.complete` when you specifically need completed JSON text.
 
 ## Installation
 
@@ -26,43 +26,57 @@ gem install json_completer
 
 ### Basic Usage
 
-Complete partial JSON strings in one call:
+Use `.parse` when you want the current parsed Ruby value directly from a partial stream:
 
 ```ruby
 require 'json_completer'
 
-# Complete truncated JSON
-JsonCompleter.complete('{"name": "John", "age":')
-# => '{"name": "John", "age": null}'
+# Parse partial JSON into Ruby objects
+JsonCompleter.parse('{"name": "John", "age":')
+# => {"name" => "John", "age" => nil}
 
 # Handle incomplete strings
-JsonCompleter.complete('{"message": "Hello wo')
-# => '{"message": "Hello wo"}'
+JsonCompleter.parse('{"message": "Hello wo')
+# => {"message" => "Hello wo"}
 
-# Fix unclosed structures
-JsonCompleter.complete('[1, 2, {"key": "value"')
-# => '[1, 2, {"key": "value"}]'
+# Close unclosed structures
+JsonCompleter.parse('[1, 2, {"key": "value"')
+# => [1, 2, {"key" => "value"}]
 ```
 
 ### Incremental Processing
 
-For streaming scenarios where JSON arrives in chunks. Each call processes only new data (O(n) complexity) by maintaining parsing state, making it highly efficient for large streaming responses:
+For streaming scenarios where JSON arrives in chunks. Each call processes only new data (O(n) complexity) by maintaining parsing state:
 
 ```ruby
 completer = JsonCompleter.new
 
 # Process first chunk
-result1 = completer.complete('{"users": [{"name": "')
-# => '{"users": [{"name": ""}]}'
+result1 = completer.parse('{"users": [{"name": "')
+# => {"users" => [{"name" => ""}]}
 
 # Process additional data
-result2 = completer.complete('{"users": [{"name": "Alice"}')
-# => '{"users": [{"name": "Alice"}]}'
+result2 = completer.parse('{"users": [{"name": "Alice"}')
+# => {"users" => [{"name" => "Alice"}]}
 
-# Final complete JSON
-result3 = completer.complete('{"users": [{"name": "Alice"}, {"name": "Bob"}]}')
-# => '{"users": [{"name": "Alice"}, {"name": "Bob"}]}'
+# Final parsed value
+result3 = completer.parse('{"users": [{"name": "Alice"}, {"name": "Bob"}]}')
+# => {"users" => [{"name" => "Alice"}, {"name" => "Bob"}]}
 ```
+
+### String Output with `.complete`
+
+Use `.complete` when you specifically need completed JSON text instead of parsed Ruby objects:
+
+```ruby
+JsonCompleter.complete('{"name": "John", "age":')
+# => '{"name": "John", "age": null}'
+
+JsonCompleter.complete('[1, 2, {"key": "value"')
+# => '[1, 2, {"key": "value"}]'
+```
+
+This is the second-tier option when another layer expects JSON text and you want `json_completer` to materialize the current partial state as valid JSON.
 
 #### Performance Characteristics
 
@@ -73,9 +87,9 @@ result3 = completer.complete('{"users": [{"name": "Alice"}, {"name": "Bob"}]}')
 
 ### Common Use Cases
 
-- **High-performance streaming JSON**: Process large JSON responses efficiently as data arrives over network connections
-- **Truncated API responses**: Complete JSON that was cut off due to size limits
-- **Log parsing**: Handle incomplete JSON entries in log files
+- **LLM streaming output**: Parse partial JSON emitted token-by-token from providers such as OpenAI and Anthropic
+- **Incremental structured output parsing**: Keep a live Ruby object while more JSON arrives
+- **JSON text completion**: Produce valid JSON text snapshots for downstream consumers that require a string
 
 ## Contributing
 
