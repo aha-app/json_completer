@@ -22,20 +22,18 @@ class JsonCompleter
       length = input.length
       incomplete_string_token = @state.incomplete_string_token
 
-      if incomplete_string_token
-        output_tokens.pop if output_tokens.last&.start_with?('"') && output_tokens.last.end_with?('"')
+      if incomplete_string_token && output_tokens.last&.start_with?('"') && output_tokens.last.end_with?('"')
+        output_tokens.pop
       end
 
       while index < length
         if incomplete_string_token && index == @state.last_index
           index, status = Scanners.scan_string(input, index, incomplete_string_token)
 
-          if status == :terminated || status == :invalid_unicode
-            output_tokens << incomplete_string_token.buffer.string
-            incomplete_string_token = nil
-          else
-            break
-          end
+          break unless %i[terminated invalid_unicode].include?(status)
+
+          output_tokens << incomplete_string_token.buffer.string
+          incomplete_string_token = nil
 
           next
         end
@@ -72,7 +70,7 @@ class JsonCompleter
           string_token = Scanners::CompletionStringToken.new
           index, status = Scanners.scan_string(input, index + 1, string_token)
 
-          if status == :terminated || status == :invalid_unicode
+          if %i[terminated invalid_unicode].include?(status)
             output_tokens << string_token.buffer.string
           else
             incomplete_string_token = string_token

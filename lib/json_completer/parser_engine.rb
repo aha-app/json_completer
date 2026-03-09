@@ -234,12 +234,11 @@ class JsonCompleter
         context.mode = :value_or_end
         context.provisional_index = context.container.length
       when ObjectContext
-        if context.mode == :after_value
-          context.mode = :key_or_end
-          context.current_key = nil
-        else
-          raise ParseError, 'cannot add a comma while an object entry is incomplete'
-        end
+        raise ParseError, 'cannot add a comma while an object entry is incomplete' unless context.mode == :after_value
+
+        context.mode = :key_or_end
+        context.current_key = nil
+
       end
     end
 
@@ -306,7 +305,7 @@ class JsonCompleter
       @parse_state.context_stack.each do |context|
         case context
         when ObjectContext
-          next unless [:after_key, :value].include?(context.mode) && context.current_key
+          next unless %i[after_key value].include?(context.mode) && context.current_key
 
           context.container[context.current_key] = nil
         when ArrayContext

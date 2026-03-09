@@ -19,6 +19,12 @@ Metrics/CyclomaticComplexity:
 Metrics/MethodLength:
   Enabled: false
 
+Metrics/ModuleLength:
+  Enabled: false
+
+Metrics/ParameterLists:
+  Enabled: false
+
 Metrics/PerceivedComplexity:
   Enabled: false
 
@@ -37,8 +43,20 @@ Style/StringConcatenation:
 Style/StringLiterals:
   Enabled: false
 
+Style/Documentation:
+  Enabled: false
+
 Style/NumericLiterals:
   Enabled: false
 
 Style/IfUnlessModifier:
+  Enabled: false
+
+Style/StructInheritance:
+  Enabled: false
+
+Style/WhileUntilModifier:
+  Enabled: false
+
+Naming/PredicateMethod:
   Enabled: false

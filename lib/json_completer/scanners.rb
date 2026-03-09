@@ -5,12 +5,8 @@ class JsonCompleter
     class CompletionStringToken < Struct.new(:buffer, :escape_state, :unicode_digits, keyword_init: true)
       def initialize(buffer: nil, escape_state: nil, unicode_digits: nil)
         buffer ||= StringIO.new
-        buffer << '"' if buffer.length.zero?
-        super(
-          buffer: buffer,
-          escape_state: escape_state,
-          unicode_digits: unicode_digits
-        )
+        buffer << '"' if buffer.string.empty?
+        super
       end
 
       def start_escape!
@@ -46,7 +42,7 @@ class JsonCompleter
         current = buffer.string
         current = current.sub(/\\u[0-9a-fA-F]*\z/, '')
         self.buffer = StringIO.new
-        self.buffer << current
+        buffer << current
         self.unicode_digits = nil
         self.escape_state = nil
       end
@@ -80,18 +76,7 @@ class JsonCompleter
         role:, slot: nil, context: nil, buffer: nil, escape_state: nil, unicode_digits: nil,
         pending_high_surrogate: nil, visible_key: nil, visible_key_replaced_value: nil, visible_key_replaced_present: false
       )
-        super(
-          role: role,
-          slot: slot,
-          context: context,
-          buffer: buffer,
-          escape_state: escape_state,
-          unicode_digits: unicode_digits,
-          pending_high_surrogate: pending_high_surrogate,
-          visible_key: visible_key,
-          visible_key_replaced_value: visible_key_replaced_value,
-          visible_key_replaced_present: visible_key_replaced_present
-        )
+        super
         self.buffer ||= String.new
       end
 
@@ -105,8 +90,6 @@ class JsonCompleter
 
       def append_simple_escape(char)
         buffer << case char
-                  when '"', '\\', '/'
-                    char
                   when 'b'
                     "\b"
                   when 'f'
@@ -173,33 +156,35 @@ class JsonCompleter
 
     class NumberToken < Struct.new(:slot, :raw, :phase, :invalid, keyword_init: true)
       def initialize(slot: nil, raw: nil, phase: nil, invalid: false)
-        super(slot: slot, raw: raw, phase: phase, invalid: invalid)
+        super
         self.raw ||= String.new
       end
 
       def append(char)
         case phase
         when nil
-          if char == '-'
+          case char
+          when '-'
             raw << char
             self.phase = :sign
-          elsif char == '0'
+          when '0'
             raw << char
             self.phase = :zero
-          elsif char.match?(/[0-9]/)
+          when /[0-9]/
             raw << char
             self.phase = :int
           else
             return false
           end
         when :sign
-          if char == '0'
+          case char
+          when '0'
             raw << char
             self.phase = :zero
-          elsif char.match?(/[0-9]/)
+          when /[0-9]/
             raw << char
             self.phase = :int
-          elsif char == '.'
+          when '.'
             raw << char
             self.phase = :frac_start
           else
@@ -212,7 +197,7 @@ class JsonCompleter
           elsif char == '.'
             raw << char
             self.phase = :frac_start
-          elsif ['e', 'E'].include?(char)
+          elsif %w[e E].include?(char)
             raw << char
             self.phase = :exp_start
           else
@@ -224,7 +209,7 @@ class JsonCompleter
           elsif char == '.'
             raw << char
             self.phase = :frac_start
-          elsif ['e', 'E'].include?(char)
+          elsif %w[e E].include?(char)
             raw << char
             self.phase = :exp_start
           else
@@ -238,7 +223,7 @@ class JsonCompleter
         when :frac
           if char.match?(/[0-9]/)
             raw << char
-          elsif ['e', 'E'].include?(char)
+          elsif %w[e E].include?(char)
             raw << char
             self.phase = :exp_start
           else
@@ -296,8 +281,8 @@ class JsonCompleter
     end
 
     class KeywordToken < Struct.new(:slot, :target, :matched, keyword_init: true)
-      def initialize(slot: nil, target:, matched: 0)
-        super(slot: slot, target: target, matched: matched)
+      def initialize(target:, slot: nil, matched: 0)
+        super
       end
 
       def append(char)
@@ -314,8 +299,6 @@ class JsonCompleter
           true
         when 'false'
           false
-        else
-          nil
         end
       end
     end

@@ -47,10 +47,10 @@ RSpec.describe 'JsonCompleter.parse benchmark', :benchmark do
 
     prefixes.each_with_index do |prefix, index|
       JSON.parse(completer.complete(prefix))
-    rescue JSON::ParserError => error
+    rescue JSON::ParserError => e
       raise <<~MSG
         complete produced invalid JSON for benchmark prefix #{index} (#{prefix.bytesize} bytes)
-        error: #{error.message}
+        error: #{e.message}
       MSG
     end
 
@@ -123,7 +123,11 @@ RSpec.describe 'JsonCompleter.parse benchmark', :benchmark do
     puts "payload_bytes=#{json.bytesize} prefixes=#{prefixes.length} iterations=#{iterations} chunk_size=#{chunk_size}"
     puts format_metrics('parse', parse_metrics, iterations)
     puts format_metrics('complete+JSON.parse', baseline_metrics, iterations)
-    puts format('speedup=%.2fx allocation_reduction=%.2fx', speedup, allocation_ratio)
+    puts format(
+      'speedup=%<speedup>.2fx allocation_reduction=%<allocation_ratio>.2fx',
+      speedup: speedup,
+      allocation_ratio: allocation_ratio
+    )
 
     expect(parse_metrics[:final_result]).to eq(baseline_metrics[:final_result])
   end
