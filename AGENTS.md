@@ -11,5 +11,6 @@
 
 ## Required Validation
 
-- For code changes, run `bundle exec rspec`.
+- For code changes, run `bundle exec rubocop` and `bundle exec rspec`.
+- For any code change, run `JSON_COMPLETER_BENCHMARK=1 bundle exec rspec spec/parse_benchmark_spec.rb` before the change and after the change, then compare the results. Treat benchmark regressions in memory or throughput as blocking until explained or fixed.
 - When behavior or performance claims change, update `README.md` in the same change.

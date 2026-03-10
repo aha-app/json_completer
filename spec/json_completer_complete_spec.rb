@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
-require 'json'
-require 'json_completer'
+require 'spec_helper'
 
 RSpec.describe JsonCompleter do
   describe '.complete' do
@@ -177,115 +176,68 @@ RSpec.describe JsonCompleter do
 
   describe '#complete' do
     it 'completes JSON incrementally with state tracking' do
-      # Start with new completer
       completer = JsonCompleter.new
 
-      # First chunk
-      result1 = completer.complete('{"name":')
-      expect(result1).to eq('{"name":null}')
-
-      # Add more content
-      result2 = completer.complete('{"name":"John"')
-      expect(result2).to eq('{"name":"John"}')
-
-      # Complete the object
-      result3 = completer.complete('{"name":"John","age":30}')
-      expect(result3).to eq('{"name":"John","age":30}')
+      expect(completer.complete('{"name":')).to eq('{"name":null}')
+      expect(completer.complete('{"name":"John"')).to eq('{"name":"John"}')
+      expect(completer.complete('{"name":"John","age":30}')).to eq('{"name":"John","age":30}')
     end
 
     it 'handles incremental array completion' do
       completer = JsonCompleter.new
 
-      # Start array
-      result1 = completer.complete('[1,')
-      expect(result1).to eq('[1,null]')
-
-      # Add more items
-      result2 = completer.complete('[1,2,')
-      expect(result2).to eq('[1,2,null]')
-
-      # Complete array
-      result3 = completer.complete('[1,2,3]')
-      expect(result3).to eq('[1,2,3]')
+      expect(completer.complete('[1,')).to eq('[1,null]')
+      expect(completer.complete('[1,2,')).to eq('[1,2,null]')
+      expect(completer.complete('[1,2,3]')).to eq('[1,2,3]')
     end
 
     it 'returns same result when input length unchanged' do
       completer = JsonCompleter.new
 
-      # First processing
-      result1 = completer.complete('{"foo":')
-      expect(result1).to eq('{"foo":null}')
-
-      # Same input should return cached result
-      result2 = completer.complete('{"foo":')
-      expect(result2).to eq('{"foo":null}')
+      expect(completer.complete('{"foo":')).to eq('{"foo":null}')
+      expect(completer.complete('{"foo":')).to eq('{"foo":null}')
     end
 
     it 'handles state reset when input is truncated' do
       completer = JsonCompleter.new
 
-      # Process longer input
-      result1 = completer.complete('{"name":"John","age":30}')
-      expect(result1).to eq('{"name":"John","age":30}')
-
-      # Process shorter input (should reset state)
-      result2 = completer.complete('{"name":')
-      expect(result2).to eq('{"name":null}')
+      expect(completer.complete('{"name":"John","age":30}')).to eq('{"name":"John","age":30}')
+      expect(completer.complete('{"name":')).to eq('{"name":null}')
     end
 
     it 'handles empty input' do
       completer = JsonCompleter.new
 
-      result = completer.complete('')
-      expect(result).to eq('')
+      expect(completer.complete('')).to eq('')
     end
 
     it 'handles valid primitives without processing' do
       completer = JsonCompleter.new
 
-      result = completer.complete('true')
-      expect(result).to eq('true')
-
-      result2 = completer.complete('42')
-      expect(result2).to eq('42')
-
-      result3 = completer.complete('"hello"')
-      expect(result3).to eq('"hello"')
+      expect(completer.complete('true')).to eq('true')
+      expect(completer.complete('42')).to eq('42')
+      expect(completer.complete('"hello"')).to eq('"hello"')
     end
 
     it 'processes complex nested structures incrementally' do
       completer = JsonCompleter.new
 
-      # Start with partial nested object
-      result1 = completer.complete('{"user":{"name":"John"')
-      expect(result1).to eq('{"user":{"name":"John"}}')
-
-      # Add more to the nested structure
-      result2 = completer.complete('{"user":{"name":"John","details":{"age":')
-      expect(result2).to eq('{"user":{"name":"John","details":{"age":null}}}')
-
-      # Complete the structure
-      result3 = completer.complete('{"user":{"name":"John","details":{"age":30}}}')
-      expect(result3).to eq('{"user":{"name":"John","details":{"age":30}}}')
+      expect(completer.complete('{"user":{"name":"John"')).to eq('{"user":{"name":"John"}}')
+      expect(completer.complete('{"user":{"name":"John","details":{"age":')).to eq('{"user":{"name":"John","details":{"age":null}}}')
+      expect(completer.complete('{"user":{"name":"John","details":{"age":30}}}')).to eq('{"user":{"name":"John","details":{"age":30}}}')
     end
 
     it 'maintains parsing state correctly across increments' do
       completer = JsonCompleter.new
 
-      # Process first chunk
-      result1 = completer.complete('[{"id":')
-      expect(result1).to eq('[{"id":null}]')
-
-      # Process second chunk
-      result2 = completer.complete('[{"id":1,"name":')
-      expect(result2).to eq('[{"id":1,"name":null}]')
+      expect(completer.complete('[{"id":')).to eq('[{"id":null}]')
+      expect(completer.complete('[{"id":1,"name":')).to eq('[{"id":1,"name":null}]')
     end
 
     it 'handles nil completer parameter' do
-      # Create new completer instance
       completer = JsonCompleter.new
-      result = completer.complete('{"test":')
-      expect(result).to eq('{"test":null}')
+
+      expect(completer.complete('{"test":')).to eq('{"test":null}')
     end
 
     context 'with streaming JSON completion' do
@@ -299,11 +251,7 @@ RSpec.describe JsonCompleter do
           '{"response":"Hello world","status":"success"}'
         ]
 
-        results = []
-        streaming_chunks.each do |chunk|
-          result = completer.complete(chunk)
-          results << result
-        end
+        results = streaming_chunks.map { |chunk| completer.complete(chunk) }
 
         expect(results).to eq(
           [
@@ -354,68 +302,39 @@ RSpec.describe JsonCompleter do
           </html>
         HTML
 
-        # Start with empty JSON wrapper
-        json_prefix = '{"html":"'
-
-        # Setup for streaming simulation
         completer = JsonCompleter.new
         current_position = 0
         full_json = JSON.generate(html: html_content)
-        accumulated_html = ""
+        accumulated_html = ''
         intermediate_results = []
 
-        # First process just the opening part
-        result = completer.complete(json_prefix)
+        result = completer.complete('{"html":"')
         expect(result).to eq('{"html":""}')
         intermediate_results << result
 
-        # Simulate streaming by processing random chunks of 3-7 characters
-        srand(12345) # Set seed for reproducible test
+        srand(12345)
 
         while current_position < html_content.length
-          # Determine random chunk size between 3-7 characters
           chunk_size = rand(3..7)
           end_position = [current_position + chunk_size, html_content.length].min
+          accumulated_html += html_content[current_position...end_position]
 
-          # Get the next chunk of HTML
-          html_chunk = html_content[current_position...end_position]
-          accumulated_html += html_chunk
-
-          # Create JSON with the accumulated HTML so far
-          current_json = JSON.generate(html: accumulated_html)[0...-2] # Remove closing brace and quote for incremental processing
-
-          # Process with JsonCompleter
+          current_json = JSON.generate(html: accumulated_html)[0...-2]
           result = completer.complete(current_json)
           intermediate_results << result
 
-          # Verify this intermediate result is valid JSON
           expect { JSON.parse(result) }.not_to raise_error
-          # Move to next position
           current_position = end_position
         end
 
-        # Process the complete JSON (with closing quote and brace)
-        final_json = JSON.generate(html: html_content)
-        result = completer.complete(final_json)
+        result = completer.complete(JSON.generate(html: html_content))
 
-        # Verify final result matches expected JSON
         expect(result).to eq(full_json)
-
-        # Parse and verify the HTML content is preserved exactly
-        parsed_result = JSON.parse(result)
-        expect(parsed_result['html']).to eq(html_content)
-
-        # Verify we had multiple intermediate steps
+        expect(JSON.parse(result)['html']).to eq(html_content)
         expect(intermediate_results.size).to be > 10
       end
 
       it 'handles HTML with complex nested structures and edge cases' do
-        # Test with HTML containing various edge cases:
-        # - Deeply nested elements
-        # - Self-closing tags
-        # - HTML entities
-        # - Attributes with quotes and special chars
-        # - Script tags with JSON content
         html_content = <<~HTML
           <!DOCTYPE html>
           <html>
@@ -452,47 +371,29 @@ RSpec.describe JsonCompleter do
         HTML
         html_content += html_content
 
-        # Setup for streaming simulation
         completer = JsonCompleter.new
         current_position = 0
-        json_prefix = '{"html":"'
-        accumulated_html = ""
-
-        # Simulate streaming with varying chunk sizes
+        accumulated_html = ''
         chunk_sizes = [3, 5, 4, 7, 6, 3, 5, 4, 6, 7, 5, 3, 4, 6, 5, 7, 4, 3, 5, 6]
         chunk_index = 0
 
-        # First process just the opening part
-        result = completer.complete(json_prefix)
+        completer.complete('{"html":"')
 
         while current_position < html_content.length
-          # Get chunk size (cycle through predefined sizes)
           chunk_size = chunk_sizes[chunk_index % chunk_sizes.length]
           chunk_index += 1
 
           end_position = [current_position + chunk_size, html_content.length].min
-          html_chunk = html_content[current_position...end_position]
-          accumulated_html += html_chunk
+          accumulated_html += html_content[current_position...end_position]
 
-          # Create JSON with accumulated HTML, properly escaped
-          partial_json = JSON.generate(html: accumulated_html)[0...-2] # Remove closing brace and quote for incremental processing
-
-          # Process with JsonCompleter
-          result = completer.complete(partial_json)
-
-          # Verify this intermediate result is valid JSON
+          result = completer.complete(JSON.generate(html: accumulated_html)[0...-2])
           expect { JSON.parse(result) }.not_to raise_error
 
           current_position = end_position
         end
 
-        # Process final complete JSON
-        final_json = JSON.generate(html: html_content)
-        result = completer.complete(final_json)
-
-        # Verify final HTML matches original
-        parsed_result = JSON.parse(result)
-        expect(parsed_result['html']).to eq(html_content)
+        result = completer.complete(JSON.generate(html: html_content))
+        expect(JSON.parse(result)['html']).to eq(html_content)
       end
     end
   end
