@@ -13,14 +13,26 @@ All notable changes to `json_completer` are documented here.
 
 ### Added
 
-- Added `JsonCompleter.parse` as the primary incremental streaming API for returning Ruby values directly from partial JSON.
-- Added dedicated `ParserEngine`, `CompletionEngine`, and shared `Scanners` components to separate incremental parsing from JSON completion.
-- Added parse-focused specs and a streaming benchmark spec.
+- None.
 
 ### Changed
 
-- Expanded benchmark reporting to compare streaming throughput and allocations against `complete + JSON.parse`.
+- None.
 
 ### Fixed
 
 - None.
+
+## [1.1.0] - 2026-03-11
+
+### Added
+
+- `JsonCompleter.parse` and `JsonCompleter#parse` — incremental streaming API that returns parsed Ruby values directly from partial JSON, avoiding an extra `JSON.parse` round-trip.
+- `ParserEngine`, `CompletionEngine`, and `Scanners` extracted as dedicated internal components for incremental parsing and completion.
+- Parse-focused spec suite and streaming benchmark spec (`parse_benchmark_spec.rb`).
+
+### Changed
+
+- `.parse` is now the recommended primary API; `.complete` is repositioned for cases where downstream consumers specifically need JSON text.
+- README rewritten to lead with `.parse`, highlight LLM streaming use cases (OpenAI, Anthropic), and document `.complete` as the text-output alternative.
+- Benchmark reporting expanded to compare streaming throughput and allocations against `complete + JSON.parse`.
