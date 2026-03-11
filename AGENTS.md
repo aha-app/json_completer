@@ -15,3 +15,7 @@
 - For any code change, run `JSON_COMPLETER_BENCHMARK=1 bundle exec rspec spec/parse_benchmark_spec.rb` before the change and after the change, then compare the results. Treat benchmark regressions in memory or throughput as blocking until explained or fixed.
 - For any change that modifies behavior, add a `CHANGELOG.md` entry under `## [Unreleased]` in the same change.
 - When behavior or performance claims change, update `README.md` in the same change.
+
+## Release process
+
+- Follow `docs/release-playbook.md`.
