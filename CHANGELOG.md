@@ -17,7 +17,7 @@ All notable changes to `json_completer` are documented here.
 
 ### Changed
 
-- None.
+- Reduced `JsonCompleter.parse` allocations and improved throughput for long streamed string values by scanning plain string runs in slices instead of per character.
 
 ### Fixed
 

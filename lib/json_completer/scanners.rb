@@ -2,6 +2,9 @@
 
 class JsonCompleter
   module Scanners
+    COMPLETION_STRING_SPECIAL_PATTERN = /["\\]/
+    PARSED_STRING_SPECIAL_PATTERN = /["\\\x00-\x1F]/
+
     class CompletionStringToken < Struct.new(:buffer, :escape_state, :unicode_digits, keyword_init: true)
       def initialize(buffer: nil, escape_state: nil, unicode_digits: nil)
         buffer ||= StringIO.new
@@ -16,6 +19,10 @@ class JsonCompleter
 
       def append_char(char)
         buffer << char
+      end
+
+      def append_slice(input, start_index, length)
+        buffer << input.slice(start_index, length)
       end
 
       def append_simple_escape(char)
@@ -88,6 +95,10 @@ class JsonCompleter
         buffer << char
       end
 
+      def append_slice(input, start_index, length)
+        buffer << input.slice(start_index, length)
+      end
+
       def append_simple_escape(char)
         buffer << case char
                   when 'b'
@@ -106,7 +117,12 @@ class JsonCompleter
       end
 
       def valid_simple_escape?(char)
-        ['"', '\\', '/', 'b', 'f', 'n', 'r', 't'].include?(char)
+        case char
+        when '"', '\\', '/', 'b', 'f', 'n', 'r', 't'
+          true
+        else
+          false
+        end
       end
 
       def start_unicode_escape!
@@ -307,8 +323,10 @@ class JsonCompleter
 
     def scan_string(input, index, token)
       strict = token.is_a?(ParsedStringToken)
+      length = input.length
+      special_pattern = strict ? PARSED_STRING_SPECIAL_PATTERN : COMPLETION_STRING_SPECIAL_PATTERN
 
-      while index < input.length
+      while index < length
         char = input[index]
 
         if token.unicode_digits
@@ -350,6 +368,22 @@ class JsonCompleter
           next
         end
 
+        if strict && token.pending_high_surrogate && char != '\\'
+          return [index, :invalid_unicode]
+        end
+
+        special_index = input.index(special_pattern, index)
+        if special_index.nil?
+          token.append_slice(input, index, length - index)
+          return [length, :incomplete]
+        end
+
+        if special_index > index
+          token.append_slice(input, index, special_index - index)
+          index = special_index
+          char = input[index]
+        end
+
         case char
         when '\\'
           token.start_escape!
@@ -362,13 +396,7 @@ class JsonCompleter
           token.terminate!
           return [index + 1, :terminated]
         else
-          if strict
-            return [index, :invalid_control_character] if char.ord < 0x20
-            return [index, :invalid_unicode] if token.pending_high_surrogate
-          end
-
-          token.append_char(char)
-          index += 1
+          return [index, :invalid_control_character]
         end
       end
 
