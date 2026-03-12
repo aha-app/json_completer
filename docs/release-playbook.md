@@ -41,6 +41,11 @@ That is the flow this repo uses.
      - `## [X.Y.Z] - YYYY-MM-DD`
    - Reset `## [Unreleased]` back to placeholders.
    - Bump `spec.version` in `json_completer.gemspec` to `X.Y.Z`.
+   - Sync `Gemfile.lock` immediately after the version bump so the path gem version matches the gemspec:
+     ```bash
+     bundle install
+     ```
+   - Verify `Gemfile.lock` now shows `json_completer (X.Y.Z)` under the `PATH` section before committing or tagging.
 
 3. Run the required validation
    - `bundle exec rubocop`
@@ -48,10 +53,10 @@ That is the flow this repo uses.
    - `JSON_COMPLETER_BENCHMARK=1 bundle exec rspec spec/parse_benchmark_spec.rb`
 
 4. Commit the release
-   - Commit the version and changelog updates on `main`.
+   - Commit the version, lockfile, and changelog updates on `main`.
    - Example:
      ```bash
-     git add json_completer.gemspec CHANGELOG.md
+     git add json_completer.gemspec Gemfile.lock CHANGELOG.md
      git commit -m "chore: release vX.Y.Z"
      ```
 
@@ -88,6 +93,7 @@ That is the flow this repo uses.
 ## Failure handling
 
 - If validation fails, fix the issue before building or publishing.
+- If `Gemfile.lock` still points at the old version, run `bundle install`, confirm the `PATH` section shows `json_completer (X.Y.Z)`, and recommit before tagging.
 - If `gem build` fails, fix the gemspec or packaging issue and rebuild.
 - If `gem push` fails because the version already exists, bump to a new version and repeat the release steps.
 - If `gem push` fails due to auth, fix local RubyGems credentials and retry.
