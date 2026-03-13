@@ -64,6 +64,8 @@ result3 = completer.parse('{"users": [{"name": "Alice"}, {"name": "Bob"}]}')
 # => {"users" => [{"name" => "Alice"}, {"name" => "Bob"}]}
 ```
 
+Stateful `JsonCompleter` instances assume append-only input. If earlier bytes change, create a new instance; truncation to a shorter prefix still resets state automatically.
+
 ### String Output with `.complete`
 
 Use `.complete` when you specifically need completed JSON text instead of parsed Ruby objects:
@@ -83,7 +85,7 @@ This is the second-tier option when another layer expects JSON text and you want
 - **Zero reprocessing**: Maintains parsing state to avoid reparsing previously processed data
 - **Linear complexity**: Each chunk processed in O(n) time where n = new data size, not total size
 - **Memory efficient**: Uses token-based accumulation with minimal state overhead
-- **Chunked string scanning**: Copies contiguous non-escape string content in slices instead of per character to reduce allocations on long streamed strings
+- **Byte-oriented string scanning**: Walks JSON input as bytes and copies contiguous non-escape string content in slices to reduce per-character overhead on long streamed strings
 - **Context preservation**: Tracks nested structures without full document analysis
 
 ### Common Use Cases

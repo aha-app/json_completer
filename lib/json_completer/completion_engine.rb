@@ -4,29 +4,31 @@ class JsonCompleter
   module CompletionEngine
     def complete(partial_json)
       input = partial_json
+      # Same byte-oriented trick as parse: compare ASCII JSON syntax as integers and avoid
+      # allocating transient 1-character strings in the streaming loop.
+      input_length = input.bytesize
 
-      if @state.nil? || @state.input_length > input.length
+      if @state.nil? || @state.input_length > input_length
         @state = ParsingState.new
       end
 
       return input if input.empty?
       return input if valid_json_primitive_or_document?(input)
 
-      if @state.input_length == input.length && !@state.output_tokens.empty?
+      if @state.input_length == input_length && !@state.output_tokens.empty?
         return finalize_completion(@state.output_tokens.dup, @state.context_stack.dup, @state.incomplete_string_token)
       end
 
       output_tokens = @state.output_tokens.dup
       context_stack = @state.context_stack.dup
       index = @state.last_index
-      length = input.length
       incomplete_string_token = @state.incomplete_string_token
 
       if incomplete_string_token && output_tokens.last&.start_with?('"') && output_tokens.last.end_with?('"')
         output_tokens.pop
       end
 
-      while index < length
+      while index < input_length
         if incomplete_string_token && index == @state.last_index
           index, status = Scanners.scan_string(input, index, incomplete_string_token)
 
@@ -38,32 +40,16 @@ class JsonCompleter
           next
         end
 
-        char = input[index]
+        byte = input.getbyte(index)
         last_significant_char_in_output = get_last_significant_char(output_tokens)
 
-        case char
-        when '{'
-          ensure_comma_before_new_item(output_tokens, context_stack, last_significant_char_in_output)
-          ensure_colon_if_value_expected(output_tokens, context_stack, last_significant_char_in_output)
-          output_tokens << char
-          context_stack << '{'
+        # ASCII byte values: 9/10/13/32 = whitespace, 34 = ", 44 = ,, 45 = -, 58 = :,
+        # 91/93 = [] , 102/110/116 = f/n/t, 123/125 = {}.
+        case byte
+        when 9, 10, 13, 32
+          output_tokens << input.byteslice(index, 1)
           index += 1
-        when '['
-          ensure_comma_before_new_item(output_tokens, context_stack, last_significant_char_in_output)
-          ensure_colon_if_value_expected(output_tokens, context_stack, last_significant_char_in_output)
-          output_tokens << char
-          context_stack << '['
-          index += 1
-        when '}'
-          remove_trailing_comma(output_tokens)
-          output_tokens << char
-          context_stack.pop if !context_stack.empty? && context_stack.last == '{'
-          index += 1
-        when ']'
-          output_tokens << char
-          context_stack.pop if !context_stack.empty? && context_stack.last == '['
-          index += 1
-        when '"'
+        when 34
           ensure_comma_before_new_item(output_tokens, context_stack, last_significant_char_in_output)
           ensure_colon_if_value_expected(output_tokens, context_stack, last_significant_char_in_output)
 
@@ -75,30 +61,62 @@ class JsonCompleter
           else
             incomplete_string_token = string_token
           end
-        when ':'
-          remove_trailing_comma(output_tokens) if last_significant_char_in_output == ','
-          output_tokens << char
-          index += 1
-        when ','
+        when 44
           remove_trailing_comma(output_tokens)
-          output_tokens << char
+          output_tokens << ','
           index += 1
-        when 't', 'f', 'n'
-          ensure_comma_before_new_item(output_tokens, context_stack, last_significant_char_in_output)
-          ensure_colon_if_value_expected(output_tokens, context_stack, last_significant_char_in_output)
-
-          keyword_val, consumed = Scanners.scan_keyword_literal(input, index, KEYWORD_MAP[char.downcase])
-          output_tokens << keyword_val
-          index += consumed
-        when '-', '0'..'9'
+        when 45, 48..57
           ensure_comma_before_new_item(output_tokens, context_stack, last_significant_char_in_output)
           ensure_colon_if_value_expected(output_tokens, context_stack, last_significant_char_in_output)
 
           num_str, consumed = Scanners.scan_number_literal(input, index)
           output_tokens << num_str
           index += consumed
-        when /\s/
-          output_tokens << char
+        when 58
+          remove_trailing_comma(output_tokens) if last_significant_char_in_output == ','
+          output_tokens << ':'
+          index += 1
+        when 91
+          ensure_comma_before_new_item(output_tokens, context_stack, last_significant_char_in_output)
+          ensure_colon_if_value_expected(output_tokens, context_stack, last_significant_char_in_output)
+          output_tokens << '['
+          context_stack << '['
+          index += 1
+        when 93
+          output_tokens << ']'
+          context_stack.pop if !context_stack.empty? && context_stack.last == '['
+          index += 1
+        when 102
+          ensure_comma_before_new_item(output_tokens, context_stack, last_significant_char_in_output)
+          ensure_colon_if_value_expected(output_tokens, context_stack, last_significant_char_in_output)
+
+          keyword_val, consumed = Scanners.scan_keyword_literal(input, index, KEYWORD_MAP['f'])
+          output_tokens << keyword_val
+          index += consumed
+        when 110
+          ensure_comma_before_new_item(output_tokens, context_stack, last_significant_char_in_output)
+          ensure_colon_if_value_expected(output_tokens, context_stack, last_significant_char_in_output)
+
+          keyword_val, consumed = Scanners.scan_keyword_literal(input, index, KEYWORD_MAP['n'])
+          output_tokens << keyword_val
+          index += consumed
+        when 116
+          ensure_comma_before_new_item(output_tokens, context_stack, last_significant_char_in_output)
+          ensure_colon_if_value_expected(output_tokens, context_stack, last_significant_char_in_output)
+
+          keyword_val, consumed = Scanners.scan_keyword_literal(input, index, KEYWORD_MAP['t'])
+          output_tokens << keyword_val
+          index += consumed
+        when 123
+          ensure_comma_before_new_item(output_tokens, context_stack, last_significant_char_in_output)
+          ensure_colon_if_value_expected(output_tokens, context_stack, last_significant_char_in_output)
+          output_tokens << '{'
+          context_stack << '{'
+          index += 1
+        when 125
+          remove_trailing_comma(output_tokens)
+          output_tokens << '}'
+          context_stack.pop if !context_stack.empty? && context_stack.last == '{'
           index += 1
         else
           index += 1
@@ -109,7 +127,7 @@ class JsonCompleter
         output_tokens: output_tokens,
         context_stack: context_stack,
         last_index: index,
-        input_length: length,
+        input_length: input_length,
         incomplete_string_token: incomplete_string_token
       )
 
