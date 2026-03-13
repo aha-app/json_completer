@@ -2,9 +2,6 @@
 
 class JsonCompleter
   module Scanners
-    COMPLETION_STRING_SPECIAL_PATTERN = /["\\]/
-    PARSED_STRING_SPECIAL_PATTERN = /["\\\x00-\x1F]/
-
     class CompletionStringToken < Struct.new(:buffer, :escape_state, :unicode_digits, keyword_init: true)
       def initialize(buffer: nil, escape_state: nil, unicode_digits: nil)
         buffer ||= StringIO.new
@@ -17,19 +14,16 @@ class JsonCompleter
         self.escape_state = :backslash
       end
 
-      def append_char(char)
-        buffer << char
-      end
-
       def append_slice(input, start_index, length)
-        buffer << input.slice(start_index, length)
+        buffer << input.byteslice(start_index, length)
       end
 
-      def append_simple_escape(char)
-        buffer << char
+      # completion keeps escape bytes verbatim, so convert the ASCII byte back into a 1-byte string.
+      def append_simple_escape(byte)
+        buffer << byte.chr(Encoding::UTF_8)
       end
 
-      def valid_simple_escape?(_char)
+      def valid_simple_escape?(_byte)
         true
       end
 
@@ -38,9 +32,9 @@ class JsonCompleter
         buffer << 'u'
       end
 
-      def append_unicode_digit(char)
-        unicode_digits << char
-        buffer << char
+      def append_unicode_digit(byte)
+        unicode_digits << byte
+        buffer << byte.chr(Encoding::UTF_8)
       end
 
       def finish_unicode_escape!; end
@@ -91,34 +85,31 @@ class JsonCompleter
         self.escape_state = :backslash
       end
 
-      def append_char(char)
-        buffer << char
-      end
-
       def append_slice(input, start_index, length)
-        buffer << input.slice(start_index, length)
+        buffer << input.byteslice(start_index, length)
       end
 
-      def append_simple_escape(char)
-        buffer << case char
-                  when 'b'
+      # ASCII escape bytes: 98/102/110/114/116 = b/f/n/r/t.
+      def append_simple_escape(byte)
+        buffer << case byte
+                  when 98
                     "\b"
-                  when 'f'
+                  when 102
                     "\f"
-                  when 'n'
+                  when 110
                     "\n"
-                  when 'r'
+                  when 114
                     "\r"
-                  when 't'
+                  when 116
                     "\t"
                   else
-                    char
+                    byte
                   end
       end
 
-      def valid_simple_escape?(char)
-        case char
-        when '"', '\\', '/', 'b', 'f', 'n', 'r', 't'
+      def valid_simple_escape?(byte)
+        case byte
+        when 34, 92, 47, 98, 102, 110, 114, 116
           true
         else
           false
@@ -129,8 +120,8 @@ class JsonCompleter
         self.unicode_digits = String.new
       end
 
-      def append_unicode_digit(char)
-        unicode_digits << char
+      def append_unicode_digit(byte)
+        unicode_digits << byte
       end
 
       def finish_unicode_escape!
@@ -176,94 +167,97 @@ class JsonCompleter
         self.raw ||= String.new
       end
 
-      def append(char)
+      # append_byte consumes ASCII bytes, not 1-character strings:
+      # 45 = -, 46 = ., 48..57 = 0..9, 69/101 = E/e.
+      def append_byte(byte)
         case phase
         when nil
-          case char
-          when '-'
-            raw << char
+          case byte
+          when 45
+            raw << byte
             self.phase = :sign
-          when '0'
-            raw << char
+          when 48
+            raw << byte
             self.phase = :zero
-          when /[0-9]/
-            raw << char
+          when 49..57
+            raw << byte
             self.phase = :int
           else
             return false
           end
         when :sign
-          case char
-          when '0'
-            raw << char
+          case byte
+          when 48
+            raw << byte
             self.phase = :zero
-          when /[0-9]/
-            raw << char
+          when 49..57
+            raw << byte
             self.phase = :int
-          when '.'
-            raw << char
+          when 46
+            raw << byte
             self.phase = :frac_start
           else
             return false
           end
         when :zero
-          if char.match?(/[0-9]/)
+          if Scanners.digit_byte?(byte)
             self.invalid = true
             return false
-          elsif char == '.'
-            raw << char
+          elsif byte == 46
+            raw << byte
             self.phase = :frac_start
-          elsif %w[e E].include?(char)
-            raw << char
+          elsif Scanners.exponent_byte?(byte)
+            raw << byte
             self.phase = :exp_start
           else
             return false
           end
         when :int
-          if char.match?(/[0-9]/)
-            raw << char
-          elsif char == '.'
-            raw << char
+          if Scanners.digit_byte?(byte)
+            raw << byte
+          elsif byte == 46
+            raw << byte
             self.phase = :frac_start
-          elsif %w[e E].include?(char)
-            raw << char
+          elsif Scanners.exponent_byte?(byte)
+            raw << byte
             self.phase = :exp_start
           else
             return false
           end
         when :frac_start
-          return false unless char.match?(/[0-9]/)
+          return false unless Scanners.digit_byte?(byte)
 
-          raw << char
+          raw << byte
           self.phase = :frac
         when :frac
-          if char.match?(/[0-9]/)
-            raw << char
-          elsif %w[e E].include?(char)
-            raw << char
+          if Scanners.digit_byte?(byte)
+            raw << byte
+          elsif Scanners.exponent_byte?(byte)
+            raw << byte
             self.phase = :exp_start
           else
             return false
           end
         when :exp_start
-          if ['+', '-'].include?(char)
-            raw << char
+          case byte
+          when 43, 45
+            raw << byte
             self.phase = :exp_sign
-          elsif char.match?(/[0-9]/)
-            raw << char
+          when 48..57
+            raw << byte
             self.phase = :exp
           else
             return false
           end
         when :exp_sign
-          return false unless char.match?(/[0-9]/)
+          return false unless Scanners.digit_byte?(byte)
 
-          raw << char
+          raw << byte
           self.phase = :exp
         when :exp
-          return false unless char.match?(/[0-9]/)
+          return false unless Scanners.digit_byte?(byte)
 
-          raw << char
+          raw << byte
         end
 
         true
@@ -301,9 +295,9 @@ class JsonCompleter
         super
       end
 
-      def append(char)
+      def append_byte(byte)
         return false if matched >= target.length
-        return false unless char.downcase == target[matched]
+        return false unless (byte | 0x20) == target.getbyte(matched)
 
         self.matched += 1
         true
@@ -323,15 +317,17 @@ class JsonCompleter
 
     def scan_string(input, index, token)
       strict = token.is_a?(ParsedStringToken)
-      length = input.length
-      special_pattern = strict ? PARSED_STRING_SPECIAL_PATTERN : COMPLETION_STRING_SPECIAL_PATTERN
+      # JSON string syntax is ASCII, so scanning bytes is safe here: multibyte UTF-8 content is
+      # treated as opaque payload and copied via byteslice until we hit an ASCII delimiter/escape.
+      length = input.bytesize
+      segment_start = index
 
       while index < length
-        char = input[index]
+        byte = input.getbyte(index)
 
         if token.unicode_digits
-          if char.match?(/[0-9a-fA-F]/)
-            token.append_unicode_digit(char)
+          if hex_digit_byte?(byte)
+            token.append_unicode_digit(byte)
             index += 1
 
             if token.unicode_digits.length == 4
@@ -341,6 +337,7 @@ class JsonCompleter
               return [index, :invalid_unicode] if status == :invalid_unicode
             end
 
+            segment_start = index
             next
           end
 
@@ -350,64 +347,67 @@ class JsonCompleter
         end
 
         if token.escape_state == :backslash
-          if strict && token.pending_high_surrogate && char != 'u'
+          if strict && token.pending_high_surrogate && byte != 117
             return [index, :invalid_unicode]
           end
 
-          if char == 'u'
+          if byte == 117
             token.start_unicode_escape!
             index += 1
+            segment_start = index
             next
           end
 
-          return [index, :invalid_escape] unless token.valid_simple_escape?(char)
+          return [index, :invalid_escape] unless token.valid_simple_escape?(byte)
 
-          token.append_simple_escape(char)
+          token.append_simple_escape(byte)
           token.escape_state = nil
           index += 1
+          segment_start = index
           next
         end
 
-        if strict && token.pending_high_surrogate && char != '\\'
+        if strict && token.pending_high_surrogate && byte != 92
           return [index, :invalid_unicode]
         end
 
-        special_index = input.index(special_pattern, index)
-        if special_index.nil?
-          token.append_slice(input, index, length - index)
-          return [length, :incomplete]
-        end
+        if byte == 34
+          token.append_slice(input, segment_start, index - segment_start) if index > segment_start
 
-        if special_index > index
-          token.append_slice(input, index, special_index - index)
-          index = special_index
-          char = input[index]
-        end
-
-        case char
-        when '\\'
-          token.start_escape!
-          index += 1
-        when '"'
           if strict && token.pending_high_surrogate
             return [index, :invalid_unicode]
           end
 
           token.terminate!
           return [index + 1, :terminated]
-        else
+        end
+
+        if byte == 92
+          token.append_slice(input, segment_start, index - segment_start) if index > segment_start
+          token.start_escape!
+          index += 1
+          segment_start = index
+          next
+        end
+
+        if strict && byte < 0x20
+          token.append_slice(input, segment_start, index - segment_start) if index > segment_start
           return [index, :invalid_control_character]
         end
+
+        index += 1
       end
 
+      token.append_slice(input, segment_start, index - segment_start) if index > segment_start
       [index, :incomplete]
     end
 
     def scan_number_literal(input, index)
       start_index = index
       token = NumberToken.new
+      length = input.bytesize
 
-      while index < input.length && token.append(input[index])
+      while index < length && token.append_byte(input.getbyte(index))
         index += 1
       end
 
@@ -417,14 +417,32 @@ class JsonCompleter
     def scan_keyword_literal(input, index, target_keyword)
       start_index = index
       token = KeywordToken.new(target: target_keyword)
+      length = input.bytesize
 
-      while index < input.length && token.append(input[index])
+      while index < length && token.append_byte(input.getbyte(index))
         index += 1
       end
 
-      return [input[start_index], 1] if token.matched.zero?
+      return [input.byteslice(start_index, 1), 1] if token.matched.zero?
 
       [target_keyword, index - start_index]
+    end
+
+    def digit_byte?(byte)
+      byte.between?(48, 57)
+    end
+
+    def exponent_byte?(byte)
+      case byte
+      when 69, 101
+        true
+      else
+        false
+      end
+    end
+
+    def hex_digit_byte?(byte)
+      digit_byte?(byte) || byte.between?(65, 70) || byte.between?(97, 102)
     end
   end
 end

@@ -257,6 +257,16 @@ RSpec.describe JsonCompleter do
       expect_incremental_parse_result(completer, '{"name":', { 'name' => nil })
     end
 
+    it 'reuses the same root object when growth only adds trailing whitespace' do
+      completer = JsonCompleter.new
+
+      result1 = completer.parse('{"a":1}')
+      result2 = completer.parse('{"a":1} ')
+
+      expect(result2).to equal(result1)
+      expect(result2).to eq({ 'a' => 1 })
+    end
+
     it 'handles empty input' do
       completer = JsonCompleter.new
 
@@ -292,6 +302,14 @@ RSpec.describe JsonCompleter do
 
       expect_incremental_parse_result(completer, '[{"id":', [{ 'id' => nil }])
       expect_incremental_parse_result(completer, '[{"id":1,"name":', [{ 'id' => 1, 'name' => nil }])
+    end
+
+    it 'handles incremental multibyte strings' do
+      completer = JsonCompleter.new
+
+      expect_incremental_parse_result(completer, '{"emoji":"😀', { 'emoji' => '😀' })
+      expect_incremental_parse_result(completer, '{"emoji":"😀 привет', { 'emoji' => '😀 привет' })
+      expect_incremental_parse_result(completer, '{"emoji":"😀 привет"}', { 'emoji' => '😀 привет' })
     end
 
     it 'handles nil completer parameter' do

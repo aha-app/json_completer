@@ -4,72 +4,79 @@ class JsonCompleter
   module ParserEngine
     def parse(partial_json)
       input = partial_json
+      # The hot path works on raw bytes, not 1-character Ruby strings. JSON punctuation is ASCII,
+      # so getbyte/bytesize let us compare cheap integers while multibyte UTF-8 payload stays intact.
+      input_length = input.bytesize
 
       if @parse_state.nil? ||
-         @parse_state.input_length > input.length ||
-         (@parse_state.input_snapshot && !input.start_with?(@parse_state.input_snapshot))
+         @parse_state.input_length > input_length ||
+         (@parse_state.input_length < input_length && reset_parse_state_for_input_growth?(input))
+        @parse_state = self.class.new_parse_state
+      elsif @parse_state.input_length == input_length
+        if @parse_state.input_snapshot == input
+          finalize_parse_result
+          return @parse_state.root
+        end
+
         @parse_state = self.class.new_parse_state
       end
 
       return nil if input.empty?
 
       begin
-        if @parse_state.input_length == input.length
-          finalize_parse_result
-          return @parse_state.root
-        end
-
         prepare_parse_state_for_incremental_input
 
         index = @parse_state.last_index
-        while index < input.length
+        while index < input_length
           if @parse_state.token_state
             index = continue_parse_token(input, index)
             next
           end
 
-          char = input[index]
-          if top_level_value_complete? && char !~ /\s/
+          byte = input.getbyte(index)
+          if top_level_value_complete? && !whitespace_byte?(byte)
             raise ParseError, 'unexpected token after top-level value'
           end
 
-          case char
-          when /\s/
+          # ASCII byte values: 9/10/13/32 = whitespace, 34 = ", 44 = ,, 45 = -, 58 = :,
+          # 91/93 = [] , 102/110/116 = f/n/t, 123/125 = {}.
+          case byte
+          when 9, 10, 13, 32
             index += 1
-          when '{'
-            start_parse_container({})
-            index += 1
-          when '['
-            start_parse_container([])
-            index += 1
-          when '}'
-            close_parse_object!
-            index += 1
-          when ']'
-            close_parse_array!
-            index += 1
-          when '"'
+          when 34
             start_parse_string_token
             index += 1
-          when ':'
-            parse_colon!
-            index += 1
-          when ','
+          when 44
             parse_comma!
             index += 1
-          when 't', 'f', 'n'
-            start_parse_keyword_token(char)
+          when 45, 48..57
+            start_parse_number_token(byte)
             index += 1
-          when '-', '0'..'9'
-            start_parse_number_token(char)
+          when 58
+            parse_colon!
+            index += 1
+          when 91
+            start_parse_container([])
+            index += 1
+          when 93
+            close_parse_array!
+            index += 1
+          when 102, 110, 116
+            start_parse_keyword_token(byte)
+            index += 1
+          when 123
+            start_parse_container({})
+            index += 1
+          when 125
+            close_parse_object!
             index += 1
           else
-            raise ParseError, "unexpected token #{char.inspect}"
+            raise ParseError, "unexpected token #{input.byteslice(index, 1).inspect}"
           end
         end
 
         @parse_state.last_index = index
-        @parse_state.input_length = input.length
+        @parse_state.input_length = input_length
         @parse_state.input_snapshot = input
         finalize_parse_result
         @parse_state.root
@@ -172,10 +179,10 @@ class JsonCompleter
       @parse_state.token_state = nil
     end
 
-    def start_parse_number_token(first_char)
+    def start_parse_number_token(first_byte)
       slot = parse_value_slot!
       token = Scanners::NumberToken.new(slot: slot)
-      token.append(first_char)
+      token.append_byte(first_byte)
       assign_parse_slot(slot, token.parsed_value)
       transition_after_parse_value(slot)
       @parse_state.token_state = token
@@ -183,21 +190,22 @@ class JsonCompleter
 
     def continue_parse_number_token(input, index)
       token = @parse_state.token_state
+      length = input.bytesize
 
-      while index < input.length && token.append(input[index])
+      while index < length && token.append_byte(input.getbyte(index))
         assign_parse_slot(token.slot, token.parsed_value)
         index += 1
       end
 
       raise ParseError, 'invalid number literal' if token.invalid?
 
-      @parse_state.token_state = nil if index < input.length
+      @parse_state.token_state = nil if index < length
       index
     end
 
-    def start_parse_keyword_token(first_char)
+    def start_parse_keyword_token(first_byte)
       slot = parse_value_slot!
-      token = Scanners::KeywordToken.new(slot: slot, target: KEYWORD_MAP[first_char], matched: 1)
+      token = Scanners::KeywordToken.new(slot: slot, target: keyword_target_for_byte(first_byte), matched: 1)
       assign_parse_slot(slot, token.parsed_value)
       transition_after_parse_value(slot)
       @parse_state.token_state = token
@@ -205,14 +213,15 @@ class JsonCompleter
 
     def continue_parse_keyword_token(input, index)
       token = @parse_state.token_state
+      length = input.bytesize
 
-      while index < input.length && token.matched < token.target.length && token.append(input[index])
+      while index < length && token.matched < token.target.length && token.append_byte(input.getbyte(index))
         index += 1
       end
 
-      raise ParseError, 'invalid keyword literal' if token.matched < token.target.length && index < input.length
+      raise ParseError, 'invalid keyword literal' if token.matched < token.target.length && index < length
 
-      @parse_state.token_state = nil if index < input.length || token.matched == token.target.length
+      @parse_state.token_state = nil if index < length || token.matched == token.target.length
       index
     end
 
@@ -238,7 +247,6 @@ class JsonCompleter
 
         context.mode = :key_or_end
         context.current_key = nil
-
       end
     end
 
@@ -338,6 +346,39 @@ class JsonCompleter
       token.visible_key_replaced_present = token.context.container.key?(current_key)
       token.visible_key_replaced_value = token.context.container[current_key]
       token.context.container[current_key] = nil
+    end
+
+    def reset_parse_state_for_input_growth?(input)
+      return false unless @parse_state.input_snapshot
+      return false unless prefix_validation_required?
+
+      !input.start_with?(@parse_state.input_snapshot)
+    end
+
+    def prefix_validation_required?
+      @parse_state.context_stack.empty?
+    end
+
+    def keyword_target_for_byte(byte)
+      case byte
+      when 102
+        'false'
+      when 110
+        'null'
+      when 116
+        'true'
+      else
+        raise ParseError, "unexpected keyword token byte: #{byte}"
+      end
+    end
+
+    def whitespace_byte?(byte)
+      case byte
+      when 9, 10, 13, 32
+        true
+      else
+        false
+      end
     end
   end
 
