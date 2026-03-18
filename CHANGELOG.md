@@ -17,6 +17,20 @@ All notable changes to `json_completer` are documented here.
 
 ### Changed
 
+- None.
+
+### Fixed
+
+- None.
+
+## [1.2.0] - 2026-03-15
+
+### Added
+
+- None.
+
+### Changed
+
 - `JsonCompleter#parse` now follows the same append-only incremental contract as `#complete`: growing inputs stay on the hot path, and callers should create a new instance if earlier bytes change.
 - Reduced `JsonCompleter.parse` allocations and improved throughput on append-only streaming inputs by walking the hot path as bytes and keeping string-copy work slice-based.
 
